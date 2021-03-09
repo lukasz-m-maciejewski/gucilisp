@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <sstream>
+#include <variant>
 
 struct CStringDeleter {
 
@@ -28,36 +29,43 @@ public:
   virtual void visit(Identifier const&) = 0;
 };
 
+enum class Type {
+  List,
+  Number,
+  Identifier,
+};
+
 class Term {
 public:
   virtual ~Term() = default;
 
   virtual void accept(TermVisitor&) const = 0;
+
+  virtual Type type() const = 0;
+
 };
 
 class List : public Term {
-  std::unique_ptr<Term> head_;
-  std::vector<std::unique_ptr<Term>> tail_;
+  std::vector<std::unique_ptr<Term>> terms_;
 
 public:
-  List() : head_{nullptr}, tail_{} {}
+  List() : terms_{} {}
 
   List& append(std::unique_ptr<Term> t) {
-    if (head_ == nullptr) {
-      head_ = std::move(t);
-    } else {
-      tail_.push_back(std::move(t));
-    }
+    terms_.push_back(std::move(t));
 
     return *this;
   }
 
-  Term const& head() const { return *head_; }
-  Term const& tail(int i) const { return *tail_[i]; }
-  int tail_size() const { return tail_.size(); }
+  Term const& at(int i) const { return *terms_.at(i); }
+  int size() const { return terms_.size(); }
 
   void accept(TermVisitor& v) const override {
     v.visit(*this);
+  }
+
+  Type type() const override {
+    return Type::List;
   }
 };
 
@@ -66,13 +74,19 @@ class Atom : public Term {
 };
 
 class Number : public Atom {
-  int value;
+  int value_;
 
 public:
-  Number(int a_value) : value{a_value} { }
+  Number(int value) : value_{value} { }
 
   void accept(TermVisitor& v) const override {
    v.visit(*this);
+  }
+
+  int value() const { return value_; }
+
+  Type type() const override {
+    return Type::Number;
   }
 };
 
@@ -86,10 +100,15 @@ public:
     v.visit(*this);
   }
 
+  std::string const& value() const { return id; }
+
+  Type type() const override {
+    return Type::Identifier;
+  }
 };
 
 class Expression {
-  std::unique_ptr<Term> term;
+  std::shared_ptr<Term> term;
   bool parse_error;
 
 public:
@@ -205,28 +224,87 @@ Expression parse(std::string_view untrimmed_input) {
   return Expression(std::move(list));
 }
 
-class TypePrintingVisitor : public TermVisitor {
+class PrintingVisitor : public TermVisitor {
   std::stringstream s;
 
 public:
   std::string get() { return s.str(); }
 
   void visit(List const& l) override{
-    s << "LIST";
+    s << '[';
+    const auto num_elements = l.size();
+    for (int i = 0; i < num_elements; ++i) {
+      if (i > 0) s << ' ';
+      l.at(i).accept(*this);
+    }
+    s << ']';
   }
 
   void visit(Number const& n) override {
-    s << "NUMBER";
+    s << n.value();
   }
 
   void visit(Identifier const& i) override {
-    s << "IDENTIFIER";
+    s << i.value();
   }
+};
+
+class Action {
+
+};
+
+class Error {
+
+};
+
+using EvaluationResult = std::variant<Expression, Action, Error>;
+
+class EvaluationContext;
+
+class Function {
+  virtual ~Function() = default;
+  virtual int arity() const = 0;
+  virtual void process_arg(Term const& t, EvaluationContext const& ec) const = 0;
+  virtual Expression result() const = 0;
+}
+
+class BuiltIn : public Function {
+
+};
+
+
+class EvaluationContext {
+  std::unordered_set<std::string, Function> values_;
+  EvaluationContext* parent;
+};
+
+class EvaluatingVisitor : TermVisitor {
+  Expression result_;
+  EvaluationContext context_;
+public:
+  Expression result() const { return result_; }
+
+  void visit(List const& l) override {
+    if (l.size() >= 3) {
+      Term const& head = l.at(0);
+      if (head.type() == Type::Identifier) {
+        if (dynamic_cast<Identifier const*>(&head)->value() == "+") {
+
+        }
+      }
+    }
+  }
+
+  void visit(Number const& n) override{
+
+  }
+
+  void visit(Identifier const& i)
 };
 
 std::string show_result(std::string_view input) {
   Expression e = parse(input);
-  TypePrintingVisitor v;
+  PrintingVisitor v;
   e.accept(v);
 
   return v.get();
