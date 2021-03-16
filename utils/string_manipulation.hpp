@@ -35,3 +35,29 @@ inline int parse_digits(std::string_view in) {
 
   return ret;
 }
+
+template <char expr_open, char expr_close>
+inline std::string_view::size_type find_matching_delimiter(
+    std::string_view in, std::string_view::size_type pos) {
+  if (in[pos] != expr_open) return std::string_view::npos;
+
+  int balance = 0;
+
+  for (auto i = pos; i < in.size(); ++i) {
+    switch (in[i]) {
+      case expr_open:
+        ++balance;
+        break;
+      case expr_close:
+        --balance;
+        break;
+    }
+
+    if (balance == 0) {
+      return i;
+    }
+  }
+
+  return std::string_view::npos;
+}
+

@@ -3,7 +3,9 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <functional>
 #include <memory>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -12,136 +14,18 @@
 #include <vector>
 
 #include "utils/outcome.hpp"
+#include "utils/overload.hpp"
 #include "utils/string_manipulation.hpp"
+#include "parse/ast.hpp"
+#include "parse/parse.hpp"
+
+namespace guci {
 
 struct CStringDeleter {
   void operator()(char* ptr) { free(ptr); }
 };
 
-class Nil {};
-
-class Number {
-  int value_;
-
- public:
-  Number(int value) : value_{value} {}
-
-  int value() const { return value_; }
-};
-
-class Identifier {
-  std::string id;
-
- public:
-  Identifier(std::string_view sv) : id{sv} {}
-
-  std::string const& value() const { return id; }
-};
-
-template <typename T>
-class List {
-  std::vector<T> terms_;
-
- public:
-  List() : terms_{} {}
-
-  List& append(T&& t) {
-    terms_.push_back(std::forward<T>(t));
-
-    return *this;
-  }
-
-  T const& at(int i) const { return terms_.at(i); }
-  int size() const { return terms_.size(); }
-};
-
-class Term {
-  std::variant<Nil, Identifier, Number, List<Term>> term_;
-
- public:
-  template <typename T>
-  Term(T&& t) : term_{std::forward<T>(t)} {}
-
-  auto const& value() const { return term_; }
-};
-
-class Expression {
-  std::shared_ptr<Term const> term;
-  bool parse_error;
-
- public:
-  Expression() : term{nullptr}, parse_error{false} {}
-  Expression(std::unique_ptr<Term> a_term)
-      : term{std::move(a_term)}, parse_error{false} {}
-
-  static Expression ParseError() {
-    Expression e;
-    e.parse_error = true;
-    return e;
-  }
-
-  std::shared_ptr<Term const> release_term() && { return term; }
-};
-
-outcome::result<Term> parse_number(std::string_view in) {
-  int sign = in[0] == '-' ? -1 : 1;
-  std::string_view digits = in[0] == '-' ? in.substr(1) : in;
-  if (not all_chars_from_set(digits, "0123456789")) {
-    return outcome::failure(std::errc::operation_not_supported);
-  }
-
-  return outcome::success(Number{sign * parse_digits(digits)});
-}
-
-outcome::result<Term> parse_atom(std::string_view untrimmed) {
-  const auto decimal_digits = "0123456789";
-  const auto in = trim(untrimmed);
-  if (is_one_of(in[0], decimal_digits) or
-      (in[0] == '-' and in.size() > 1 and is_one_of(in[1], decimal_digits))) {
-    return parse_number(in);
-  }
-
-  return outcome::success(Identifier{in});
-}
-
-outcome::result<Term> parse(std::string_view);
-
-outcome::result<void> append_terms(List<Term>& l, std::string_view in) {
-  std::string_view::size_type begin = 0;
-  std::string_view::size_type end = 0;
-
-  while (end != in.size()) {
-    while (in[begin] == ' ') ++begin;
-    end = begin;  // TODO: should check if paren and find closing paren position
-    while (in[end] != ' ' and end != in.size()) ++end;
-    auto t = OUTCOME_TRYX(parse(in.substr(begin, end - begin + 1)));
-    l.append(std::move(t));
-    begin = end + 1;
-  }
-
-  return outcome::success();
-}
-
-outcome::result<Term> parse(std::string_view untrimmed_input) {
-  const auto in = trim(untrimmed_input);
-  if (in.empty()) {
-    return outcome::success(Nil{});
-  }
-  if (in[0] != '(') {
-    return parse_atom(in);
-  }
-
-  if (!in.ends_with(')')) {
-    return outcome::failure(std::errc::operation_not_supported);
-  }
-
-  const auto inner_in = trim(in.substr(1, in.size() - 2));
-
-  auto list = List<Term>{};
-  OUTCOME_TRYV(append_terms(list, inner_in));
-
-  return outcome::success(std::move(list));
-}
+using SafeCStr = std::unique_ptr<char, CStringDeleter>;
 
 class PrintingVisitor {
   std::stringstream s;
@@ -172,34 +56,97 @@ class Error {};
 
 using EvaluationResult = std::variant<Term, Action, Error>;
 
-// class EvaluationContext;
-class BuiltInFunction {};
+class EvaluationContext;
+
+// Design decision: expression cannot modify global context while it's begin
+// evaluated; a context modification can be either done by spawning a child
+// context or by returning an action modifying global context, to be apply after
+// evaluation is complete.
+
+class BuiltInFunction {
+  using Impl = std::function<EvaluationResult(EvaluationContext const&,
+                                              std::span<Term const>)>;
+
+  int arity_;
+  Impl fun_;
+
+ public:
+  BuiltInFunction(int arity, Impl fun) : arity_{arity}, fun_{fun} {}
+
+  int arity() const { return arity_; }
+  EvaluationResult apply(EvaluationContext const& ctx,
+                         std::span<Term const> args) const {
+    return fun_(ctx, args);
+  }
+};
 
 class UserDefinedFunction {};
 
 class Function {
-  std::variant<BuiltInFunction, UserDefinedFunction> fun;
+  std::variant<BuiltInFunction, UserDefinedFunction> fun_;
+
+ public:
+  auto const& operator()() const { return fun_; }
 };
 
-class EvaluatingVisitor {
-  Term result_;
-  // EvaluationContext context_;
- public:
-  Term result() const { return result_; }
+class EvaluationContext {
+  std::unordered_map<std::string, Function> values_;
+  EvaluationContext const* parent_;
 
-  void operator()(List const& l) {
-    if (l.size() >= 3) {
-      Term const& head = l.at(0);
-      if (head.type() == Type::Identifier) {
-        if (dynamic_cast<Identifier const*>(&head)->value() == "+") {
-        }
-      }
+ public:
+  EvaluationContext(
+      std::initializer_list<std::pair<const std::string, Function>> values)
+      : values_{values}, parent_{nullptr} {}
+  EvaluationContext(
+      EvaluationContext const* parent,
+      std::initializer_list<std::pair<std::string const, Function>> values)
+      : values_{values}, parent_{parent} {}
+
+  Function const* find(std::string const& id) const {
+    auto const it = values_.find(id);
+    if (it == values_.end()) {
+      return parent_ != nullptr ? parent_->find(id) : nullptr;
     }
+
+    return std::addressof(it->second);
+  }
+};
+
+EvaluationResult apply(Function const& fun, EvaluationContext const& ctx,
+                       std::span<Term const> args) {
+  auto const v = overload(
+      [&](BuiltInFunction const& f) -> EvaluationResult {
+        if (static_cast<std::size_t>(f.arity()) != args.size()) {
+          return Error{};
+        }
+        return f.apply(ctx, args);
+      },
+      [](UserDefinedFunction const&) -> EvaluationResult { return Error{}; });
+  return std::visit(v, fun());
+}
+
+class EvaluatingVisitor {
+  EvaluationContext context_;
+
+ public:
+  EvaluationResult operator()(List<Term> const& l) {
+    if (l.empty()) return Term{Nil{}};
+
+    auto v = overload(
+        [this, &l](Identifier const& id) -> EvaluationResult {
+          Function const* f = context_.find(id.value());
+          if (f == nullptr) return Error{};
+          return apply(*f, context_, l.tail());
+        },
+        [](auto const&) -> EvaluationResult { return Error{}; });
+    return std::visit(v, l.at(0).value());
   }
 
-  void visit(Number const& n) override {}
+  Term operator()(Number const& n) { return n; }
 
-  void visit(Identifier const& i)
+  Term operator()(Identifier const& id) { return id; }
+
+  Term operator()(Nil const&) { return Nil{}; }
 };
 
 std::string show_result(std::string_view input) {
@@ -210,12 +157,12 @@ std::string show_result(std::string_view input) {
   return v.get();
 }
 
-int main(int argc, char** argv) {
+outcome::result<void> Main(std::vector<std::string_view> const& args
+                           [[maybe_unused]]) {
   rl_bind_key('\t', rl_complete);
 
   while (true) {
-    std::unique_ptr<char, CStringDeleter> input{
-        readline("prompt> ")};  //, free};
+    SafeCStr input{readline("prompt> ")};
 
     if (input == nullptr) {
       break;
@@ -226,4 +173,14 @@ int main(int argc, char** argv) {
     auto result = show_result(input.get());
     puts(result.c_str());
   }
+
+  return outcome::success();
+}
+
+}  // namespace guci
+
+int main(int argc, char** argv) {
+  std::vector<std::string_view> args{argv, argv + argc};
+  auto result = guci::Main(args);
+  return result ? 0 : 1;
 }
