@@ -27,9 +27,7 @@ bool is_alpha(char c) {
   return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z');
 }
 
-bool is_decimal(char c) {
-  return c >= '0' and c <= '9';
-}
+bool is_decimal(char c) { return c >= '0' and c <= '9'; }
 
 class skip_one_of {
   std::string_view chars_;
@@ -115,7 +113,9 @@ MaybeParse parse_number(std::string_view untrimed) {
 
 MaybeParse parse_identifier(std::string_view untrimmed) {
   auto [res, in] = skip_whitespace(untrimmed).value();
-  auto valid_begin = [](char c) { return is_alpha(c) or is_one_of(c, "_+-*/%^@?!"); };
+  auto valid_begin = [](char c) {
+    return is_alpha(c) or is_one_of(c, "_+-*/%^@?!");
+  };
   auto valid_rest = [&](char c) { return valid_begin(c) or is_decimal(c); };
 
   if (not valid_begin(in[0])) {
@@ -124,7 +124,8 @@ MaybeParse parse_identifier(std::string_view untrimmed) {
 
   // cannot begin in the same way as a number
   if (in[0] == '-' and valid_rest(in[1]) and is_decimal(in[1])) {
-    return ParseError{ParseErrc::GenericError, "identifier cannot begin like a number"};
+    return ParseError{ParseErrc::GenericError,
+                      "identifier cannot begin like a number"};
   }
 
   std::string_view::size_type pos = 1;
@@ -140,12 +141,13 @@ MaybeParse parse_atom(std::string_view untrimmed) {
 MaybeParse parse_list(std::string_view untrimmed) {
   auto [ignored, in_with_paren] = skip_whitespace(untrimmed).value();
   auto res = skip_one_of("(")(in_with_paren);
-  if (not res) return ParseError{ParseErrc::GenericError, "list should begin with '('"};
+  if (not res)
+    return ParseError{ParseErrc::GenericError, "list should begin with '('"};
 
   std::string_view rest = res.value().rest;
   List<Term> list{};
 
-  while(auto mp = alternative{parse_atom, parse_list}(rest)) {
+  while (auto mp = alternative{parse_atom, parse_list}(rest)) {
     PartialParse p = std::move(mp).value();
     rest = p.rest;
     list.append(std::move(p.t));
