@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -9,7 +11,7 @@
 namespace guci {
 
 class Nil {
-  public:
+ public:
   bool operator==(Nil) const { return true; }
   bool operator!=(Nil) const { return false; }
 };
@@ -84,7 +86,8 @@ class Term {
     return lhs.term_ == rhs;
   }
 
-  auto const& value() const { return term_; }
+  auto const& term() const { return term_; }
+  auto const& operator*() const { return term_; }
 };
 
 }  // namespace guci
