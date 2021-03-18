@@ -55,9 +55,22 @@ class BuiltInFunction {
   Impl fun_;
 
  public:
+  static constexpr auto kAnyArity = -1;
+  static constexpr auto kAnyPositiveArity = -2;
   BuiltInFunction(int arity, Impl fun) : arity_{arity}, fun_{fun} {}
 
   int arity() const { return arity_; }
+  bool acceptsArgumentNumber(std::size_t arg_num) const {
+    if (arity_ == kAnyArity) {
+      return true;
+    }
+
+    if (arity_ == kAnyPositiveArity and arg_num != 0) {
+      return true;
+    }
+
+    return static_cast<std::size_t>(arity_) == arg_num;
+  }
   EvaluationResult apply(EvaluationContext const& ctx,
                          std::span<Term const> args) const {
     return fun_(ctx, args);
@@ -104,7 +117,7 @@ EvaluationResult apply(Function const& fun, EvaluationContext const& ctx,
                        std::span<Term const> args) {
   auto const v = overload(
       [&](BuiltInFunction const& f) -> EvaluationResult {
-        if (static_cast<std::size_t>(f.arity()) != args.size()) {
+        if (not f.acceptsArgumentNumber(args.size())) {
           return Error{"arity mismatch"};
         }
         return f.apply(ctx, args);
@@ -203,15 +216,63 @@ std::string show_result(EvaluationContext& context, std::string_view input) {
 
 class Add {
  public:
-  EvaluationResult operator()(EvaluationContext const&, std::span<Term const>) {
-    return Term{Number{3}};
+  EvaluationResult operator()(EvaluationContext const&,
+                              std::span<Term const> ts) {
+    Term acc = Number(0);
+    for (auto const& t : ts) {
+      EvaluationResult r = std::visit(*this, *acc, *t);
+      switch (r.index()) {
+        case 0:  // Term
+          acc = std::get<Term>(r);
+          break;
+        case 1:  // Action
+          return Error("addition should not result in an action");
+        case 2:  // Error
+          return r;
+      }
+    }
+    return acc;
+  }
+
+  EvaluationResult operator()(Number const& lhs, Number const& rhs) {
+    return Term{Number{lhs.value() + rhs.value()}};
+  }
+
+  template <typename LHS, typename RHS>
+  EvaluationResult operator()(LHS const&, RHS const&) {
+    return Error("unbound variables in arithmetic expression");
   }
 };
 
 class Subtract {
  public:
-  EvaluationResult operator()(EvaluationContext const&, std::span<Term const>) {
-    return Term{Number{1}};
+  EvaluationResult operator()(EvaluationContext const&,
+                              std::span<Term const> args) {
+    Term acc = args[0];
+
+    for (std::size_t i = 1; i < args.size(); ++i) {
+      EvaluationResult r = std::visit(*this, *acc, *args[i]);
+      switch (r.index()) {
+        case 0:  // Term
+          acc = std::get<Term>(r);
+          break;
+        case 1:  // Action
+          return Error("addition should not result in an action");
+        case 2:  // Error
+          return r;
+      }
+    }
+
+    return acc;
+  }
+
+  EvaluationResult operator()(Number const& lhs, Number const& rhs) {
+    return Term{Number{lhs.value() - rhs.value()}};
+  }
+
+  template <typename LHS, typename RHS>
+  EvaluationResult operator()(LHS const&, RHS const&) {
+    return Error("unbound variables in arithmetic expression");
   }
 };
 
@@ -220,8 +281,8 @@ outcome::result<void> Main(std::vector<std::string_view> const& args
   rl_bind_key('\t', rl_complete);
 
   EvaluationContext global_context{
-      {{"+", BuiltInFunction(2, Add{})},
-       {"-", BuiltInFunction(2, Subtract{})}}};
+      {{"+", BuiltInFunction(BuiltInFunction::kAnyArity, Add{})},
+       {"-", BuiltInFunction(BuiltInFunction::kAnyPositiveArity, Subtract{})}}};
 
   while (true) {
     SafeCStr input{readline("prompt> ")};

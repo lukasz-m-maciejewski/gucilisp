@@ -87,6 +87,7 @@ class Term {
   }
 
   auto const& term() const { return term_; }
+  auto const& operator*() const { return term_; }
 };
 
 }  // namespace guci
