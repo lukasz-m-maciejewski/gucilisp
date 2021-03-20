@@ -5,7 +5,7 @@
 #include <string_view>
 
 #include "parse/ast.hpp"
-#include "utils/outcome.hpp"
+#include "parse/parse_error.hpp"
 #include "utils/string_manipulation.hpp"
 
 namespace guci {
@@ -16,7 +16,7 @@ class PartialParse {
   std::string_view rest;
 };
 
-using MaybeParse = ::guci::result<PartialParse>;
+using MaybeParse = ::guci::parse_result<PartialParse>;
 
 using Parser = std::function<MaybeParse(std::string_view)>;
 using JoinOp = std::function<Term(Term, Term)>;
@@ -165,7 +165,7 @@ MaybeParse parse_term(std::string_view in) {
   return alternative{parse_atom, parse_list}(in);
 }
 
-result<Term> parse(std::string_view in) {
+parse_result<Term> parse(std::string_view in) {
   PartialParse result = OUTCOME_TRYX(parse_term(in));
   if (not std::ranges::all_of(result.rest, is_whitespace)) {
     return ParseError(ParseErrc::GenericError, "incomplete parse");
