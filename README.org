@@ -1,0 +1,25 @@
+#+TITLE: GuciLisp
+
+* Feature roadmap
+** language
+*** add strings and character literals
+*** add dot operator for building cons cells
+Lists are not currently represented internally by cons cells. How do we represent cons cells;
+a new special type or a two element list? Adding separate type for cons cells would result in
+a need for quite a lot of conversions.
+*** type annotations - colon syntax??
+*** quoting and unqoting
+*** user-defined functions
+*** lisp macros - learn about them first
+
+** internal utils
+*** string_view version with tracking of original position
+
+** code organization
+*** pull eval to a module
+*** ?? move to bazel ??
+CMake is shitty AF
+
+
+** user interaction
+*** check whether running in tty or not, do something else based on that

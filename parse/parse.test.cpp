@@ -91,4 +91,21 @@ TEST_CASE("parse_list", "[parse]") {
   }
 }
 
+TEST_CASE("parse_string", "[parse]") {
+  SECTION("parse correct string without escape sequences") {
+    PartialParse p = parse_string(" \"abc\"  x").value();
+
+    auto expected_term = String("abc");
+    REQUIRE(p.t == expected_term);
+    REQUIRE(p.rest == "  x");
+  }
+  SECTION("parse correct string with escape sequences") {
+    PartialParse p = parse_string(" \"abc\\ndef\"  x").value();
+
+    auto expected_term = String("abc\ndef");
+    REQUIRE(p.t == expected_term);
+    REQUIRE(p.rest == "  x");
+  }
+}
+
 }  // namespace guci

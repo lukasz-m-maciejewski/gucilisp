@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <ostream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -38,6 +39,20 @@ class Identifier {
   std::string const& value() const { return id; }
 };
 
+class String {
+  std::string value_;
+
+ public:
+  String(std::string_view sv) : value_{sv} {}
+  bool operator==(String const&) const = default;
+
+  std::string const& value() const { return value_; }
+
+  friend std::ostream& operator<<(std::ostream& out, String const& s) {
+    return out << '"' << s.value() << '"';
+  }
+};
+
 template <typename T>
 class List {
   std::vector<T> terms_;
@@ -67,7 +82,7 @@ class List {
 };
 
 class Term {
-  using ValueType = std::variant<Nil, Identifier, Number, List<Term>>;
+  using ValueType = std::variant<Nil, Identifier, Number, String, List<Term>>;
   ValueType term_;
 
  public:
@@ -79,6 +94,7 @@ class Term {
   Term(Nil v) : term_{std::move(v)} {}
   Term(Identifier v) : term_{std::move(v)} {}
   Term(Number v) : term_{std::move(v)} {}
+  Term(String v) : term_{std::move(v)} {}
   Term(List<Term> v) : term_{std::move(v)} {}
 
   template <typename T>

@@ -5,7 +5,7 @@
 #include <string_view>
 
 #include "parse/ast.hpp"
-#include "utils/outcome.hpp"
+#include "parse/parse_error.hpp"
 #include "utils/string_manipulation.hpp"
 
 namespace guci {
@@ -16,7 +16,7 @@ class PartialParse {
   std::string_view rest;
 };
 
-using MaybeParse = ::guci::result<PartialParse>;
+using MaybeParse = ::guci::parse_result<PartialParse>;
 
 using Parser = std::function<MaybeParse(std::string_view)>;
 using JoinOp = std::function<Term(Term, Term)>;
@@ -26,6 +26,8 @@ bool is_whitespace(char c) { return is_one_of(c, " \n\t"); }
 bool is_alpha(char c) {
   return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z');
 }
+
+bool is_special_char(char c) { return is_one_of(c, ":()\"'$[]"); }
 
 bool is_decimal(char c) { return c >= '0' and c <= '9'; }
 
@@ -111,6 +113,67 @@ MaybeParse parse_number(std::string_view untrimed) {
   return outcome::success(PartialParse{Number{sign * acc}, in.substr(idx)});
 }
 
+parse_result<char> escaped(char c) {
+  switch (c) {
+    case '\\':
+    case '\'':
+    case '\"':
+      return c;
+    case 'n':
+      return '\n';
+    case 'a':
+      return '\a';
+    case 't':
+      return '\t';
+    case 'r':
+      return '\r';
+    case 'b':
+      return '\b';
+    case 'v':
+      return '\v';
+    case '0':
+      return '\0';
+    default:
+      return ParseError{"invalid escape sequence"};
+  }
+}
+
+MaybeParse parse_string(std::string_view untrimmed) {
+  auto [res, in] = skip_whitespace(untrimmed).value();
+
+  if (in[0] != '"') {
+    return ParseError{"invalid string"};
+  }
+
+  std::size_t length = 0;
+
+  std::size_t pos = 1;
+  while (true) {
+    if (pos >= in.size()) return ParseError{"unterminated string literal"};
+    if (in[pos] == '"') break;
+    if (in[pos] == '\\') ++pos;
+    ++length;
+    ++pos;
+  }
+
+  std::string result;
+  result.reserve(length);
+
+  pos = 1;
+  while (true) {
+    if (in[pos] == '"') break;
+    if (in[pos] == '\\') {
+      result.push_back(OUTCOME_TRYX(escaped(in[++pos])));
+    } else {
+      result.push_back(in[pos]);
+    }
+
+    pos++;
+  }
+
+  return outcome::success(PartialParse{String{result}, in.substr(pos + 1)});
+}
+
 MaybeParse parse_identifier(std::string_view untrimmed) {
   auto [res, in] = skip_whitespace(untrimmed).value();
   auto valid_begin = [](char c) {
@@ -135,7 +198,7 @@ MaybeParse parse_identifier(std::string_view untrimmed) {
 }
 
 MaybeParse parse_atom(std::string_view untrimmed) {
-  return alternative{parse_number, parse_identifier}(untrimmed);
+  return alternative{parse_number, parse_identifier, parse_string}(untrimmed);
 }
 
 MaybeParse parse_list(std::string_view untrimmed) {
@@ -165,7 +228,7 @@ MaybeParse parse_term(std::string_view in) {
   return alternative{parse_atom, parse_list}(in);
 }
 
-result<Term> parse(std::string_view in) {
+parse_result<Term> parse(std::string_view in) {
   PartialParse result = OUTCOME_TRYX(parse_term(in));
   if (not std::ranges::all_of(result.rest, is_whitespace)) {
     return ParseError(ParseErrc::GenericError, "incomplete parse");
