@@ -1,5 +1,7 @@
+#include <fmt/core.h>
 #include <readline/history.h>
 #include <readline/readline.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -12,7 +14,6 @@
 #include <string_view>
 #include <unordered_set>
 #include <variant>
-#include <fmt/core.h>
 #include <vector>
 
 #include "parse/ast.hpp"
@@ -96,26 +97,48 @@ class Function {
 };
 
 class EvaluationContext {
-  using ValueContainer = std::unordered_map<std::string, Function>;
+  using FunctionContainer = std::unordered_map<std::string, Function>;
+  using ValueContainer = std::unordered_map<std::string, Term>;
+  FunctionContainer functions_;
   ValueContainer values_;
   EvaluationContext const* parent_;
 
  public:
+  using FunctionType = FunctionContainer::value_type;
   using ValueType = ValueContainer::value_type;
 
-  EvaluationContext(std::initializer_list<ValueType> values)
-      : values_{values}, parent_{nullptr} {}
-  EvaluationContext(EvaluationContext const* parent,
+  EvaluationContext(std::initializer_list<FunctionType> functions,
                     std::initializer_list<ValueType> values)
-      : values_{values}, parent_{parent} {}
+      : functions_{functions}, values_{values}, parent_{nullptr} {}
+  EvaluationContext(EvaluationContext const* parent,
+                    std::initializer_list<FunctionType> functions,
+                    std::initializer_list<ValueType> values)
+      : functions_{functions}, values_{values}, parent_{parent} {}
 
-  Function const* find(std::string const& id) const {
+  Term const* find_value(std::string const& id) const {
     auto const it = values_.find(id);
     if (it == values_.end()) {
-      return parent_ != nullptr ? parent_->find(id) : nullptr;
+      return parent_ != nullptr ? parent_->find_value(id) : nullptr;
     }
 
     return std::addressof(it->second);
+  }
+
+  Function const* find_function(std::string const& id) const {
+    auto const it = functions_.find(id);
+    if (it == functions_.end()) {
+      return parent_ != nullptr ? parent_->find_function(id) : nullptr;
+    }
+
+    return std::addressof(it->second);
+  }
+
+  eval_result<void> set_value(std::string const& id, Term t) {
+    if (values_.contains(id)) {
+      return EvalError("value already exists");
+    }
+    values_.insert({id, t});
+    return outcome::success();
   }
 };
 
@@ -146,7 +169,7 @@ class EvaluatingVisitor {
 
     auto v = overload(
         [this, &l](Identifier const& id) -> EvaluationResult {
-          Function const* f = context_->find(id.value());
+          Function const* f = context_->find_function(id.value());
           if (f == nullptr) return EvalError{"function not found"};
 
           return apply(*f, *context_, l.tail());
@@ -164,6 +187,8 @@ class EvaluatingVisitor {
   EvaluationResult operator()(Nil const&) { return Term{NIL}; }
 
   EvaluationResult operator()(String const& s) { return Term{s}; }
+
+  EvaluationResult operator()(Boolean const& b) { return Term{b}; }
 };
 
 class PrintingVisitor {
@@ -182,18 +207,10 @@ class PrintingVisitor {
     s << ']';
   }
 
-  void operator()(Number const& n) { s << n.value(); }
-
-  void operator()(Identifier const& i) { s << i.value(); }
-
-  void operator()(Nil const&) { s << "NIL"; }
-
-  void operator()(String const& str) { s << str;}
-
-  // //
-  // void operator()(Term const& t) { std::visit(*this, t.term()); }
-  // void operator()(Action const&) { s << "ACTION"; }
-  // void operator()(Error const& e) { s << "ERROR: " << e.msg(); }
+  template <typename T>
+  void operator()(T const& t) {
+    s << t;
+  }
 };
 
 std::string show_result(EvaluationContext& context, std::string_view input) {
@@ -250,7 +267,7 @@ class Subtract {
 
     for (std::size_t i = 1; i < args.size(); ++i) {
       EvaluationSuccess arg_eval =
-          OUTCOME_TRYX(std::visit(EvaluatingVisitor{ctx}, *args[0]));
+          OUTCOME_TRYX(std::visit(EvaluatingVisitor{ctx}, *args[i]));
       es.merge_action_from(std::move(arg_eval.actions));
       EvaluationSuccess r = OUTCOME_TRYX(std::visit(*this, *es.t, *arg_eval.t));
       es.t = r.t;
@@ -284,7 +301,7 @@ outcome::result<void> RunRepl() {
                                     std::span<Term const>) -> EvaluationResult {
                                   program_termination_requested = true;
                                   return EvaluationSuccess(NIL);
-                                })}}};
+                                })}}, {}};
 
   while (not program_termination_requested) {
     SafeCStr input{readline("prompt> ")};
@@ -304,7 +321,17 @@ outcome::result<void> RunRepl() {
 
 outcome::result<void> Main(std::vector<std::string_view> const& args
                            [[maybe_unused]]) {
-  return RunRepl();
+  if (isatty(fileno(stdin))) {
+    return RunRepl();
+  } else {
+    std::array<char, 128> chunk;
+
+    while (fgets(chunk.data(), chunk.size(), stdin) != NULL) {
+      fputs(chunk.data(), stdout);
+      fputs("|*\n", stdout);
+    }
+    return outcome::success();
+  }
 }
 
 }  // namespace guci
@@ -312,6 +339,5 @@ outcome::result<void> Main(std::vector<std::string_view> const& args
 int main(int argc, char** argv) {
   std::vector<std::string_view> args{argv, argv + argc};
   auto result = guci::Main(args);
-  fmt::print("Hello World!\n");
   return result ? 0 : 1;
 }

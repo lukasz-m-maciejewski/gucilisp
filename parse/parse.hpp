@@ -21,15 +21,15 @@ using MaybeParse = ::guci::parse_result<PartialParse>;
 using Parser = std::function<MaybeParse(std::string_view)>;
 using JoinOp = std::function<Term(Term, Term)>;
 
-bool is_whitespace(char c) { return is_one_of(c, " \n\t"); }
+inline bool is_whitespace(char c) { return is_one_of(c, " \n\t"); }
 
-bool is_alpha(char c) {
+inline bool is_alpha(char c) {
   return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z');
 }
 
-bool is_special_char(char c) { return is_one_of(c, ":()\"'$[]"); }
+inline bool is_special_char(char c) { return is_one_of(c, ":()\"'$[]"); }
 
-bool is_decimal(char c) { return c >= '0' and c <= '9'; }
+inline bool is_decimal(char c) { return c >= '0' and c <= '9'; }
 
 class skip_one_of {
   std::string_view chars_;
@@ -72,7 +72,7 @@ class kleene_star {
   }
 };
 
-MaybeParse skip_whitespace(std::string_view in) {
+inline MaybeParse skip_whitespace(std::string_view in) {
   return kleene_star{skip_one_of{" \t\n"}}(in);
 }
 
@@ -93,7 +93,7 @@ class alternative {
   }
 };
 
-MaybeParse parse_number(std::string_view untrimed) {
+inline MaybeParse parse_number(std::string_view untrimed) {
   auto const decimal_digits = "0123456789";
 
   auto [res, in] = skip_whitespace(untrimed).value();
@@ -113,7 +113,7 @@ MaybeParse parse_number(std::string_view untrimed) {
   return outcome::success(PartialParse{Number{sign * acc}, in.substr(idx)});
 }
 
-parse_result<char> escaped(char c) {
+inline parse_result<char> escaped(char c) {
   switch (c) {
     case '\\':
     case '\'':
@@ -138,7 +138,7 @@ parse_result<char> escaped(char c) {
   }
 }
 
-MaybeParse parse_string(std::string_view untrimmed) {
+inline MaybeParse parse_string(std::string_view untrimmed) {
   auto [res, in] = skip_whitespace(untrimmed).value();
 
   if (in[0] != '"') {
@@ -174,7 +174,7 @@ MaybeParse parse_string(std::string_view untrimmed) {
   return outcome::success(PartialParse{String{result}, in.substr(pos + 1)});
 }
 
-MaybeParse parse_identifier(std::string_view untrimmed) {
+inline MaybeParse parse_identifier(std::string_view untrimmed) {
   auto [res, in] = skip_whitespace(untrimmed).value();
   auto valid_begin = [](char c) {
     return is_alpha(c) or is_one_of(c, "_+-*/%^@?!");

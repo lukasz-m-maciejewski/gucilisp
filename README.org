@@ -11,6 +11,8 @@ a need for quite a lot of conversions.
 *** quoting and unqoting
 *** user-defined functions
 *** lisp macros - learn about them first
+*** booleans
+*** variables!!!
 
 ** internal utils
 *** string_view version with tracking of original position

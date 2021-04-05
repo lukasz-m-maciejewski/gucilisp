@@ -15,6 +15,9 @@ class Nil {
  public:
   bool operator==(Nil) const { return true; }
   bool operator!=(Nil) const { return false; }
+  friend std::ostream& operator<<(std::ostream& out, Nil const&) {
+    return out << "NIL";
+  }
 };
 
 inline Nil const NIL{};
@@ -27,6 +30,10 @@ class Number {
   bool operator==(Number const&) const = default;
 
   int value() const { return value_; }
+
+  friend std::ostream& operator<<(std::ostream& out, Number const& n) {
+    return out << n.value();
+  }
 };
 
 class Identifier {
@@ -37,6 +44,10 @@ class Identifier {
   bool operator==(Identifier const&) const = default;
 
   std::string const& value() const { return id; }
+
+  friend std::ostream& operator<<(std::ostream& out, Identifier const& id) {
+    return out << id.value();
+  }
 };
 
 class String {
@@ -81,8 +92,25 @@ class List {
   }
 };
 
+class Boolean {
+  bool value_;
+
+ public:
+  Boolean() : value_{false} {}
+  Boolean(bool value) : value_{value} {}
+
+  bool operator==(Boolean const&) const = default;
+
+  bool value() const { return value_; }
+
+  friend std::ostream& operator<<(std::ostream& out, Boolean const& b) {
+    return out << (b.value() ? "#t" : "#f");
+  }
+};
+
 class Term {
-  using ValueType = std::variant<Nil, Identifier, Number, String, List<Term>>;
+  using ValueType =
+      std::variant<Nil, Boolean, Identifier, Number, String, List<Term>>;
   ValueType term_;
 
  public:
@@ -92,10 +120,13 @@ class Term {
   Term& operator=(Term&&) = default;
 
   Term(Nil v) : term_{std::move(v)} {}
+  Term(Boolean b) : term_{std::move(b)} {}
   Term(Identifier v) : term_{std::move(v)} {}
   Term(Number v) : term_{std::move(v)} {}
   Term(String v) : term_{std::move(v)} {}
   Term(List<Term> v) : term_{std::move(v)} {}
+
+  bool operator==(Term const&) const = default;
 
   template <typename T>
   friend bool operator==(Term const& lhs, T const& rhs) {
