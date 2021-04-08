@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utils/outcome.hpp"
+#include "guci/utils/outcome.hpp"
 
 namespace guci {
 
@@ -74,7 +74,9 @@ struct EvalError {
   auto ec() const { return ec_; }
 };
 
-inline std::error_code make_error_code(EvalError const& err) { return err.ec(); }
+inline std::error_code make_error_code(EvalError const& err) {
+  return err.ec();
+}
 
 inline void outcome_throw_as_system_error_with_payload(EvalError const& err) {
   throw std::runtime_error{err.msg()};

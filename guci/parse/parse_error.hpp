@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utils/outcome.hpp"
+#include "guci/utils/outcome.hpp"
 
 namespace guci {
 

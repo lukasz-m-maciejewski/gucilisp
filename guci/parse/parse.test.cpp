@@ -1,5 +1,5 @@
 #include "catch2/catch.hpp"
-#include "parse/parse.hpp"
+#include "guci/parse/parse.hpp"
 
 namespace guci {
 

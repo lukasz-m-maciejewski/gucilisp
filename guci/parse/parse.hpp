@@ -4,9 +4,9 @@
 #include <functional>
 #include <string_view>
 
-#include "parse/ast.hpp"
-#include "parse/parse_error.hpp"
-#include "utils/string_manipulation.hpp"
+#include "guci/parse/ast.hpp"
+#include "guci/parse/parse_error.hpp"
+#include "guci/utils/string_manipulation.hpp"
 
 namespace guci {
 

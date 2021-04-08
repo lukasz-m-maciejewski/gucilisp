@@ -90,6 +90,9 @@ class List {
     if (terms_.begin() == terms_.end()) return {};
     return {terms_.begin() + 1, terms_.end()};
   }
+
+  auto begin() const { return terms_.begin(); }
+  auto end() const { return terms_.end(); }
 };
 
 class Boolean {

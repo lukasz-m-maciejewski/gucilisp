@@ -8,7 +8,9 @@ Lists are not currently represented internally by cons cells. How do we represen
 a new special type or a two element list? Adding separate type for cons cells would result in
 a need for quite a lot of conversions.
 *** type annotations - colon syntax??
-*** quoting and unqoting
+*** NO! quoting and unqoting
+We'll try to be lazy evaluated and do symbolic computation natively, so that quoting is irrelevant.
+Maybe and explicit eval function instead?
 *** user-defined functions
 *** lisp macros - learn about them first
 *** booleans
