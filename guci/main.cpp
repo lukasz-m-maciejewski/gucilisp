@@ -205,6 +205,32 @@ class Subtract {
   }
 };
 
+class Multiply {
+public:
+  EvaluationResult operator()(EvaluationContext& ctx,
+                              std::span<Term const> ts) {
+    EvaluationSuccess es{Number(1)};
+    for (auto const& t : ts) {
+      EvaluationSuccess t_eval =
+          OUTCOME_TRYX(std::visit(EvaluatingVisitor{ctx}, *t));
+      es.merge_action_from(std::move(t_eval.as));
+      EvaluationSuccess r = OUTCOME_TRYX(std::visit(*this, *es.t, *t_eval.t));
+      es.t = r.t;
+      es.merge_action_from(std::move(r.as));
+    }
+    return es;
+  }
+
+  EvaluationResult operator()(Number const& lhs, Number const& rhs) {
+    return Term{Number{lhs.value() * rhs.value()}};
+  }
+
+  template <typename LHS, typename RHS>
+  EvaluationResult operator()(LHS const&, RHS const&) {
+    return EvalError("unbound variables in arithmetic expression");
+  }
+};
+
 EvaluationResult builtin_let(EvaluationContext&, std::span<Term const> args) {
   Identifier id = OUTCOME_TRYX(as_identifier(args[0]));
   auto set_value_action = SetValue(id.value(), args[1]);
@@ -234,6 +260,7 @@ outcome::result<void> RunRepl() {
           {"+", BuiltInFunction(BuiltInFunction::kAnyArity, Add{})},
           {"-",
            BuiltInFunction(BuiltInFunction::kAnyPositiveArity, Subtract{})},
+          {"*", BuiltInFunction(BuiltInFunction::kAnyArity, Multiply{})},
           {"quit",
            BuiltInFunction(0,
                            [&program_termination_requested](
